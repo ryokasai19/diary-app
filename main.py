@@ -1,42 +1,46 @@
 import streamlit as st
-import google.generativeai as genai
-import os
-from dotenv import load_dotenv
+import datetime
+# Import your new custom modules
+from modules import database, ai
 
-# 1. Configuration
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+st.title("📅 AI Voice Calendar")
 
-st.title("🎙️ AI Voice Diary")
-st.write("Click the mic to record your thoughts.")
+# 1. Calendar Widget
+selected_date = st.date_input("Select a date", datetime.date.today())
+date_str = str(selected_date)
 
-# 2. The Recording UI (No separate script needed!)
-# This creates a widget in the browser that records audio
-audio_value = st.audio_input("Record")
+# 2. Load Data
+db = database.load_db()
 
-if audio_value:
-    # When the user stops recording, this block runs automatically
-    st.info("⏳ Processing your audio...")
+if date_str in db:
+    # --- VIEW MODE ---
+    entry = db[date_str]
+    st.success(f"Entry found for {date_str}")
+    st.subheader("📝 Summary")
+    st.markdown(entry["summary"])
+    st.subheader("🎧 Recording")
+    st.audio(entry["audio_path"])
 
-    try:
-        # 3. Create a temporary file
-        # Gemini needs a file on disk to read, so we save the recording briefly
-        with open("temp_audio.wav", "wb") as f:
-            f.write(audio_value.read())
+else:
+    # --- RECORD MODE ---
+    st.info(f"No entry for {date_str}.")
+    
+    if selected_date == datetime.date.today():
+        audio_value = st.audio_input("Record your day")
 
-        # 4. Upload to Gemini
-        myfile = genai.upload_file("temp_audio.wav")
-        
-        # 5. Generate Summary
-        model = genai.GenerativeModel("gemini-flash-latest")
-        result = model.generate_content([
-            "Listen to this audio and summarize the key points into a bulleted list. Be as concise as possible, maximum 5 bullet points. Don't use colons and categorize, just list the important things the speaker said. Where, what with whom, how they felt might be important.　Avoid referring to the speaker as they, just omit the pronouns or if necessary, use first person.", 
-            myfile
-        ])
-        
-        # 6. Display Result
-        st.success("Summary Generated!")
-        st.markdown(result.text)
+        if audio_value:
+            st.warning("Processing...")
+            audio_bytes = audio_value.read()
 
-    except Exception as e:
-        st.error(f"Error: {e}")
+            try:
+                # Call the AI module
+                summary = ai.summarize_audio(audio_bytes)
+                
+                # Call the Database module
+                database.save_entry(date_str, summary, audio_bytes)
+                
+                st.success("Saved! Refreshing...")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Error: {e}")
