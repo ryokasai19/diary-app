@@ -20,7 +20,16 @@ def summarize_audio(audio_bytes):
         # Generate
         model = genai.GenerativeModel("gemini-flash-latest")
         result = model.generate_content([
-            "Listen to this audio and summarize the key points into a bulleted list. Be as concise as possible, maximum 5 bullet points. Don't use colons and categorize, just list the important things the speaker said. Where, what with whom, how they felt might be important.　Avoid referring to the speaker as they, just omit the pronouns or if necessary, use first person.", 
+            """
+            Summarize this audio into a concise bulleted list (max 5 points).
+            Style: Telegraphic, first-person diary format.
+            - Focus on: Who, What, Where, How.
+            - Grammar: Use sentence fragments. Omit "they/he/she". Use "I" if needed.
+            - Example: "Met Nicholas. He is moving to Seattle" -> "Nicholas moving to Seattle."
+
+            Required Final Bullet:
+            - A subjective 2-3 word description of the speaker's vibe (e.g., 'Sounded drunk', 'Sounded excited', 'Voice cracked').
+            """,
             myfile
         ])
         

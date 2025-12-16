@@ -25,7 +25,9 @@ else:
     # --- RECORD MODE ---
     st.info(f"No entry for {date_str}.")
     
-    if selected_date == datetime.date.today():
+    # !!! change this part to record only if the date is today !!!
+    # if selected_date == datetime.date.today():
+    if True:
         audio_value = st.audio_input("Record your day")
 
         if audio_value:
