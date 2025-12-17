@@ -2,100 +2,98 @@ import streamlit as st
 import datetime
 import os
 # Import your custom modules
-from modules import database, ai, mac_photos, image_loader
+from modules import database, ai, mac_photos, image_loader, cloud_db
 
-st.title("Chit Chat!😋")
+st.title("Chit Chat! 😋")
 
-# Load Data first (needed for search functionality)
+# Load Data
 db = database.load_db()
 
-# --- SEARCH SIDEBAR ---
+# --- SIDEBAR: SEARCH ---
 st.sidebar.header("🔍 Search Memories")
 search_term = st.sidebar.text_input("Find keyword")
 
-# Define a tiny helper function to update the calendar
 def go_to_date(new_date):
     st.session_state.date_picker = new_date
 
 if search_term:
     results = [d for d, data in db.items() if search_term.lower() in data["summary"].lower()]
-    
     st.sidebar.markdown(f"**Found {len(results)} entries:**")
-    
     for date_result in results:
-        # Convert string "2025-12-16" back to a Date Object
         y, m, d = map(int, date_result.split("-"))
-        target_date = datetime.date(y, m, d)
-
-        # BUTTON with 'on_click' (This is the magic fix)
         st.sidebar.button(
             f"📅 {date_result}", 
             key=f"btn_search_{date_result}",
-            on_click=go_to_date,  # <--- Triggers the function immediately
-            args=(target_date,)   # <--- Passes the date to the function
+            on_click=go_to_date,
+            args=(datetime.date(y, m, d),)
         )
-
     if not results:
         st.sidebar.caption("No matches found.")
     st.sidebar.markdown("---")
 
-# 1. Calendar Widget
-# --- FIX: Initialize the date in session state first ---
+# --- CALENDAR SETUP ---
 if "date_picker" not in st.session_state:
     st.session_state.date_picker = datetime.date.today()
 
-# Now create the widget WITHOUT a default value argument
-# It will automatically use whatever is in st.session_state.date_picker
 selected_date = st.date_input("Select a date", key="date_picker")
 date_str = str(selected_date)
-# --- NEW: Session State Setup ---
+
+# Reset state when date changes
 if "last_date" not in st.session_state or st.session_state.last_date != date_str:
     st.session_state.last_date = date_str
-    st.session_state.step = 1            # Start at Step 1 (Photos)
-    st.session_state.selected_photo = None # Reset photo
+    st.session_state.step = 1
+    st.session_state.selected_photo = None
 
+# ==========================
+#       VIEW MODE
+# ==========================
 if date_str in db:
-    # ==========================
-    #      VIEW MODE
-    # ==========================
     entry = db[date_str]
-    #st.success(f"Entry found for {date_str}")
     
-    # 1. Display Photo with Diagnostics
-    saved_path = entry.get("image_path")
+    # 1. DISPLAY PHOTO (Priority: Local -> Cloud)
+    local_path = entry.get("image_path")
+    cloud_url = entry.get("image_url")
+    
+    st.caption(f"📅 Memory from {date_str}")
 
-    if saved_path: 
-        if os.path.exists(saved_path):
-            # --- DEBUG CHECK 2: try to load ---
-            try:
-                img_data = image_loader.load_image_for_streamlit(saved_path)
-                
-                if img_data:
-                    st.image(img_data, use_container_width=True)
-                else:
-                    st.error("❌ Error: The image loader returned 'None'. The file might be corrupted or empty.")
-            except Exception as e:
-                st.error(f"❌ Crash in loader: {e}")
+    # OPTION A: Try Local File First
+    if local_path and os.path.exists(local_path):
+        img_data = image_loader.load_image_for_streamlit(local_path)
+        if img_data:
+            st.image(img_data)
         else:
-            st.error(f"❌ Error: File not found at `{saved_path}`. Check your 'image_path' folder.")
+            st.error("⚠️ Local image file is corrupt.")
             
-    # 2. Display Summary
+    # OPTION B: Fallback to Cloud URL
+    elif cloud_url:
+        st.info("☁️ Loading image from Cloud...")
+        st.image(cloud_url)
+        
+    else:
+        if local_path: 
+            st.warning(f"⚠️ Photo missing from disk: {local_path}")
+
+    # 2. Summary
     st.subheader("📝 Summary")
     st.markdown(entry["summary"])
     
-    # 3. Display Recording
+    # 3. Audio
     st.subheader("🎧 Recording")
-    st.audio(entry["audio_path"])
+    if os.path.exists(entry["audio_path"]):
+        st.audio(entry["audio_path"])
+    else:
+        st.error("Audio file missing.")
 
+# ==========================
+#      RECORD MODE
+# ==========================
 else:
     # --- STEP 1: PHOTO SELECTION ---
     if st.session_state.step == 1:
         st.info("Step 1: Choose a photo")
         
-        try:
-            suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
-        except Exception:
-            suggested_photos = []
+        # This will now use your robust 'mac_photos' module
+        suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
 
         if suggested_photos:
             cols = st.columns(3)
@@ -104,33 +102,30 @@ else:
                 
                 if img_data:
                     with cols[idx % 3]:
-                        st.image(img_data, use_container_width=True)
-                        # BUTTON: Selects and moves to next step
-                        if st.button("Select", key=f"btn_{idx}"):
+                        st.image(img_data)
+                        if st.button("Select", key=f"btn_{idx}", use_container_width=True):
                             st.session_state.selected_photo = photo_path
                             st.session_state.step = 2 
                             st.rerun()
         else:
-            st.warning("No photos found.")
-
+            st.warning("No downloaded photos found for this date. (Check Photos app to ensure they are downloaded from iCloud)")
+        
         st.markdown("---")
         if st.button("Skip / No Photo"):
             st.session_state.selected_photo = None
             st.session_state.step = 2
             st.rerun()
 
-    # --- STEP 2: AUDIO RECORDING ---
+    # --- STEP 2: RECORDING ---
     elif st.session_state.step == 2:
         st.info("Step 2: Record your thoughts")
         
-        # Show Preview
         if st.session_state.selected_photo:
             st.caption("Selected Photo:")
             preview = image_loader.load_image_for_streamlit(st.session_state.selected_photo)
             if preview:
                 st.image(preview, width=150)
 
-        # Recorder
         audio_value = st.audio_input(f"Record for {date_str}")
 
         if audio_value:
@@ -138,24 +133,33 @@ else:
             audio_bytes = audio_value.read()
 
             try:
+                # 1. AI Summary
                 summary = ai.summarize_audio(audio_bytes)
                 
-                # Save using the stored photo path
+                # 2. Save Locally
                 database.save_entry(
                     date_str, 
                     summary, 
                     audio_bytes, 
                     st.session_state.selected_photo
                 )
+
+                # 3. Save to Cloud (Supabase)
+                # Reconstruct path logic
+                saved_audio_path = f"recordings/{date_str}.wav"
                 
-                st.success("Saved!")
+                try:
+                    cloud_db.save_to_cloud(date_str, summary, saved_audio_path, st.session_state.selected_photo)
+                    st.toast("✅ Synced to Cloud!")
+                except Exception as e:
+                    st.warning(f"Saved locally, but Cloud Sync failed: {e}")
+                
+                st.success("Entry Saved!")
                 st.rerun()
 
             except Exception as e:
                 st.error(f"Error: {e}")
-
-        # I don't think it's needed        
-        # Back Button
+        
         #if st.button("⬅️ Change Photo"):
         #    st.session_state.step = 1
         #    st.rerun()

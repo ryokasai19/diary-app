@@ -1,39 +1,22 @@
-import pillow_heif
-from PIL import Image
+from PIL import Image, ImageOps
 import os
 
-
-
-def load_image_for_streamlit(path):
+def load_image_for_streamlit(image_path):
     """
-    Safely loads an image from a path. 
-    Handles HEIC conversion and checks for corruption.
-    Returns a PIL Image object or None if the file is bad.
+    Loads an image from a path, corrects its orientation (EXIF),
+    and returns a PIL Image object ready for st.image().
+    Returns None if the file cannot be read.
     """
-    if not os.path.exists(path):
+    if not image_path or not os.path.exists(image_path):
         return None
 
     try:
-        # 1. Handle HEIC Files (iPhone)
-        if path.lower().endswith(".heic"):
-            heif_file = pillow_heif.read_heif(path)
-            image = Image.frombytes(
-                heif_file.mode,
-                heif_file.size,
-                heif_file.data,
-                "raw",
-            )
-            return image
-            
-        # 2. Handle Standard Files (JPG, PNG, etc.)
-        else:
-            # We explicitly open it here to catch corruption errors 
-            # before passing it to Streamlit.
-            image = Image.open(path)
-            image.load() # Force loading the image data to check for errors
-            return image
-
+        image = Image.open(image_path)
+        
+        # fix orientation (iPhone photos often appear rotated otherwise)
+        image = ImageOps.exif_transpose(image)
+        
+        return image
     except Exception as e:
-        # If anything goes wrong (corrupted file, 0 bytes, etc.), return None
-        print(f"⚠️ Warning: Could not load image at {path}: {e}")
+        print(f"Error loading image {image_path}: {e}")
         return None
