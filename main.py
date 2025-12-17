@@ -6,19 +6,60 @@ from modules import database, ai, mac_photos, image_loader
 
 st.title("Chit Chat!😋")
 
-# 1. Calendar Widget
-selected_date = st.date_input("Select a date", datetime.date.today())
-date_str = str(selected_date)
-
-# 2. Load Data
+# Load Data first (needed for search functionality)
 db = database.load_db()
+
+# --- SEARCH SIDEBAR ---
+st.sidebar.header("🔍 Search Memories")
+search_term = st.sidebar.text_input("Find keyword")
+
+# Define a tiny helper function to update the calendar
+def go_to_date(new_date):
+    st.session_state.date_picker = new_date
+
+if search_term:
+    results = [d for d, data in db.items() if search_term.lower() in data["summary"].lower()]
+    
+    st.sidebar.markdown(f"**Found {len(results)} entries:**")
+    
+    for date_result in results:
+        # Convert string "2025-12-16" back to a Date Object
+        y, m, d = map(int, date_result.split("-"))
+        target_date = datetime.date(y, m, d)
+
+        # BUTTON with 'on_click' (This is the magic fix)
+        st.sidebar.button(
+            f"📅 {date_result}", 
+            key=f"btn_search_{date_result}",
+            on_click=go_to_date,  # <--- Triggers the function immediately
+            args=(target_date,)   # <--- Passes the date to the function
+        )
+
+    if not results:
+        st.sidebar.caption("No matches found.")
+    st.sidebar.markdown("---")
+
+# 1. Calendar Widget
+# --- FIX: Initialize the date in session state first ---
+if "date_picker" not in st.session_state:
+    st.session_state.date_picker = datetime.date.today()
+
+# Now create the widget WITHOUT a default value argument
+# It will automatically use whatever is in st.session_state.date_picker
+selected_date = st.date_input("Select a date", key="date_picker")
+date_str = str(selected_date)
+# --- NEW: Session State Setup ---
+if "last_date" not in st.session_state or st.session_state.last_date != date_str:
+    st.session_state.last_date = date_str
+    st.session_state.step = 1            # Start at Step 1 (Photos)
+    st.session_state.selected_photo = None # Reset photo
 
 if date_str in db:
     # ==========================
     #      VIEW MODE
     # ==========================
     entry = db[date_str]
-    st.success(f"Entry found for {date_str}")
+    #st.success(f"Entry found for {date_str}")
     
     # 1. Display Photo with Diagnostics
     saved_path = entry.get("image_path")
@@ -47,45 +88,49 @@ if date_str in db:
     st.audio(entry["audio_path"])
 
 else:
-    # ==========================
-    #     RECORD MODE
-    # ==========================
-    st.info(f"No entry for {date_str}. Create one below.")
-    
     # --- STEP 1: PHOTO SELECTION ---
-    st.markdown("### 1. Select a Photo (Optional)")
-    
-    selected_photo_path = None # Default to None
-    
-    try:
-        suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
-    except Exception:
-        st.warning("Could not access Photos Library.")
-        suggested_photos = []
-
-    if suggested_photos:
-        st.caption(f"Found photos from {date_str}")
+    if st.session_state.step == 1:
+        st.info("Step 1: Choose a photo")
         
-        # Display photos in a grid
-        cols = st.columns(3)
-        for idx, photo_path in enumerate(suggested_photos):
-            # Load image safely
-            img_data = image_loader.load_image_for_streamlit(photo_path)
-            
-            if img_data:
-                with cols[idx % 3]:
-                    st.image(img_data, use_container_width=True)
-                    # Unique key for every checkbox
-                    if st.checkbox("Select", key=f"p_{idx}"):
-                        selected_photo_path = photo_path
-    else:
-        st.caption("No local photos found for this date.")
+        try:
+            suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
+        except Exception:
+            suggested_photos = []
+
+        if suggested_photos:
+            cols = st.columns(3)
+            for idx, photo_path in enumerate(suggested_photos):
+                img_data = image_loader.load_image_for_streamlit(photo_path)
+                
+                if img_data:
+                    with cols[idx % 3]:
+                        st.image(img_data, use_container_width=True)
+                        # BUTTON: Selects and moves to next step
+                        if st.button("Select", key=f"btn_{idx}"):
+                            st.session_state.selected_photo = photo_path
+                            st.session_state.step = 2 
+                            st.rerun()
+        else:
+            st.warning("No photos found.")
+
+        st.markdown("---")
+        if st.button("Skip / No Photo"):
+            st.session_state.selected_photo = None
+            st.session_state.step = 2
+            st.rerun()
 
     # --- STEP 2: AUDIO RECORDING ---
-    st.markdown("### 2. Record Audio")
-    
-    # Testing mode enabled (True) - Change to 'if selected_date == datetime.date.today():' later
-    if True: 
+    elif st.session_state.step == 2:
+        st.info("Step 2: Record your thoughts")
+        
+        # Show Preview
+        if st.session_state.selected_photo:
+            st.caption("Selected Photo:")
+            preview = image_loader.load_image_for_streamlit(st.session_state.selected_photo)
+            if preview:
+                st.image(preview, width=150)
+
+        # Recorder
         audio_value = st.audio_input(f"Record for {date_str}")
 
         if audio_value:
@@ -93,14 +138,24 @@ else:
             audio_bytes = audio_value.read()
 
             try:
-                # 1. Get AI Summary
                 summary = ai.summarize_audio(audio_bytes)
                 
-                # 2. Save to Database (including the photo!)
-                database.save_entry(date_str, summary, audio_bytes, selected_photo_path)
+                # Save using the stored photo path
+                database.save_entry(
+                    date_str, 
+                    summary, 
+                    audio_bytes, 
+                    st.session_state.selected_photo
+                )
                 
-                st.success("Saved! Refreshing...")
+                st.success("Saved!")
                 st.rerun()
 
             except Exception as e:
                 st.error(f"Error: {e}")
+
+        # I don't think it's needed        
+        # Back Button
+        #if st.button("⬅️ Change Photo"):
+        #    st.session_state.step = 1
+        #    st.rerun()
