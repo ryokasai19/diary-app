@@ -13,6 +13,23 @@ db = database.load_db()
 st.sidebar.header("🔍 Search Memories")
 search_term = st.sidebar.text_input("Find keyword")
 
+# --- SIDEBAR: USER SELECTOR ---
+st.sidebar.header("👤 User Profile")
+current_user = st.sidebar.selectbox("View Diary Of:", ["ryo", "syd"])
+
+# --- LOAD DATA BASED ON SELECTION ---
+if current_user == "ryo":
+    # Load Local Data (Writable)
+    db = database.load_db()
+    is_read_only = False
+    st.sidebar.success("✏️ Editing Mode")
+else:
+    # Load Cloud Data (Read-Only)
+    st.spinner(f"Downloading {current_user}'s diary...")
+    db = cloud_db.fetch_entries_by_user(current_user)
+    is_read_only = True
+    st.sidebar.info("👀 View-Only Mode")
+
 def go_to_date(new_date):
     st.session_state.date_picker = new_date
 
@@ -79,15 +96,27 @@ if date_str in db:
     
     # 3. Audio
     st.subheader("🎧 Recording")
-    if os.path.exists(entry["audio_path"]):
-        st.audio(entry["audio_path"])
+    
+    # Get paths safely
+    audio_path = entry.get("audio_path")
+    audio_url = entry.get("audio_url")
+
+    # Priority: Local File -> Cloud URL -> Error
+    if audio_path and os.path.exists(audio_path):
+        st.audio(audio_path)
+    elif audio_url:
+        st.audio(audio_url)
     else:
-        st.error("Audio file missing.")
+        st.info("No audio available.")
 
 # ==========================
 #      RECORD MODE
 # ==========================
 else:
+    
+    if is_read_only:
+        st.info(f"🚫 {current_user} hasn't posted on this day.")
+        st.stop()
     # --- STEP 1: PHOTO SELECTION ---
     if st.session_state.step == 1:
         st.info("Step 1: Choose a photo")
@@ -149,7 +178,7 @@ else:
                 saved_audio_path = f"recordings/{date_str}.wav"
                 
                 try:
-                    cloud_db.save_to_cloud(date_str, summary, saved_audio_path, st.session_state.selected_photo)
+                    cloud_db.save_to_cloud(date_str, summary, saved_audio_path, st.session_state.selected_photo, user_id="ryo")
                     st.toast("✅ Synced to Cloud!")
                 except Exception as e:
                     st.warning(f"Saved locally, but Cloud Sync failed: {e}")

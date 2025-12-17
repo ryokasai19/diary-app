@@ -32,9 +32,9 @@ def upload_file(local_path, destination_path):
         print(f"⚠️ Cloud Upload Error: {e}")
         return None
 
-def save_to_cloud(date_str, summary, local_audio_path, local_image_path):
+def save_to_cloud(date_str, summary, local_audio_path, local_image_path, user_id="ryo"):
     """Saves text to DB and media to Storage."""
-    print(f"☁️ Syncing {date_str} to Supabase...")
+    print(f"☁️ Syncing {date_str} for user '{user_id}'...")
 
     # 1. Upload Audio
     audio_cloud_path = f"audio/{date_str}.wav"
@@ -49,6 +49,7 @@ def save_to_cloud(date_str, summary, local_audio_path, local_image_path):
 
     # 3. Save Data (Upsert)
     data = {
+        "user_id": user_id,
         "date": date_str,
         "summary": summary,
         "audio_url": audio_url,
@@ -61,3 +62,26 @@ def save_to_cloud(date_str, summary, local_audio_path, local_image_path):
         print("✅ Cloud Save Complete!")
     except Exception as e:
         print(f"❌ Database Error: {e}")
+
+# --- NEW FUNCTION: Fetch Friend's Data ---
+def fetch_entries_by_user(target_user_id):
+    """Downloads all diary entries for a specific friend."""
+    try:
+        response = supabase.table("entries").select("*").eq("user_id", target_user_id).execute()
+        
+        # Convert list of rows into our dictionary format: { "2025-12-17": { ... } }
+        cloud_data = {}
+        for row in response.data:
+            date_key = row["date"]
+            cloud_data[date_key] = {
+                "summary": row["summary"],
+                "audio_path": None,      # Cloud audio isn't local
+                "audio_url": row["audio_url"], # But we have the URL!
+                "image_path": None,
+                "image_url": row["image_url"]
+            }
+        return cloud_data
+        
+    except Exception as e:
+        print(f"❌ Fetch Error: {e}")
+        return {}
