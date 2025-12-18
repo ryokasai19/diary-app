@@ -1,13 +1,13 @@
 import streamlit as st
 import datetime
 import os
-from modules import database, ai, mac_photos, image_loader, cloud_db
+from modules import ai, mac_photos, image_loader, cloud_db
 
 # ==========================================
 # 1. INITIALIZATION
 # ==========================================
 if "logged_in_user" not in st.session_state:
-    st.session_state.logged_in_user = None  # <--- Default is NOW Locked
+    st.session_state.logged_in_user = None
 
 if "step" not in st.session_state:
     st.session_state.step = 1
@@ -16,7 +16,7 @@ if "selected_photo" not in st.session_state:
     st.session_state.selected_photo = None
 
 # ==========================================
-# 2. LOGIN GATE (The Lock)
+# 2. LOGIN GATE
 # ==========================================
 if not st.session_state.logged_in_user:
     st.title("🔒 Diary Login")
@@ -27,22 +27,20 @@ if not st.session_state.logged_in_user:
         password_input = st.text_input("Password", type="password")
     
     if st.button("Log In"):
-        # Check against Supabase
         if cloud_db.check_login(username_input, password_input):
             st.session_state.logged_in_user = username_input
             st.success("Login Successful!")
             st.rerun()
         else:
             st.error("Incorrect username or password.")
-            
-    st.stop() # <--- Stops the app here until logged in
+    st.stop()
 
 # ==========================================
 # 3. MAIN APP SETUP
 # ==========================================
 current_user = st.session_state.logged_in_user
 
-# Sidebar: Logout Button
+# Sidebar: Logout
 st.sidebar.title(f"👋 Hi, {current_user.title()}")
 if st.sidebar.button("Log Out"):
     st.session_state.logged_in_user = None
@@ -54,38 +52,23 @@ st.title("Chit Chat! 😋")
 st.sidebar.header("🔍 Search Memories")
 search_term = st.sidebar.text_input("Find keyword")
 
-# --- SIDEBAR: FRIEND VIEW ---
+# --- SIDEBAR: VIEW MODE ---
 view_mode = st.sidebar.radio("Mode", ["My Diary", "Friend's Diary"])
-
-# --- DEBUG INFO (Add this temporarily!) ---
-st.sidebar.markdown("---")
-st.sidebar.caption(f"👤 User: {current_user}")
-st.sidebar.caption(f"💻 Mode: {'Local' if current_user == 'ryo' else 'Cloud'}")
 
 if view_mode == "Friend's Diary":
     friend_name = st.sidebar.text_input("Enter Friend's Username:")
     if friend_name:
-        st.info(f"Viewing {friend_name}'s Diary")
         db = cloud_db.fetch_entries_by_user(friend_name, viewer_is_owner=False)
         is_read_only = True
         active_user_view = friend_name
     else:
-        st.warning("Enter a name above.")
         db = {}
         is_read_only = True
         active_user_view = "Unknown"
 else:
-    # Load My Data
-    # Assumption: 'ryo' is the main user on this Mac
-    if current_user == "ryo":
-        db = database.load_db()
-        st.sidebar.caption(f"📂 Loaded {len(db)} local entries") # <--- TELLS US IF FILE IS EMPTY
-        is_read_only = False
-    else:
-        # If logging in as someone else (like 'syd') on Ryo's computer, 
-        # load from Cloud so we don't overwrite Ryo's local files.
-        db = cloud_db.fetch_entries_by_user(current_user, viewer_is_owner=True)
-        is_read_only = False
+    # "My Diary" - ALWAYS LOAD FROM CLOUD
+    db = cloud_db.fetch_entries_by_user(current_user, viewer_is_owner=True)
+    is_read_only = False
     active_user_view = current_user
 
 # --- CALENDAR SETUP ---
@@ -127,40 +110,34 @@ if date_str in db:
         img_data = image_loader.load_image_for_streamlit(local_path)
         if img_data: st.image(img_data)
     elif cloud_url:
-        # st.info("☁️ Loading image from Cloud...")
+        st.info("☁️ Loading image from Cloud...")
         st.image(cloud_url)
     elif local_path:
         st.warning("⚠️ Photo missing from disk.")
 
-    # 2. SUMMARY (View & Finalize)
+    # 2. SUMMARY
     st.subheader("📝 Summary")
     
     is_edited = entry.get("is_edited", False)
     edit_mode_key = f"edit_mode_{date_str}"
-    
     if edit_mode_key not in st.session_state:
         st.session_state[edit_mode_key] = False
 
-    # -- Logic Block --
     if is_read_only:
         st.markdown(entry["summary"])
         if is_edited: st.caption("*(This entry has been edited)*")
 
     elif is_edited:
-        # LOCKED
         st.markdown(entry["summary"])
         st.caption("🔒 *Edited & Finalized*")
 
     elif st.session_state[edit_mode_key]:
-        # EDITING
         new_summary = st.text_area("Update summary:", value=entry["summary"], height=150)
         col1, col2 = st.columns([1, 5])
         
         if col1.button("💾 Finalize"):
             with st.spinner("Finalizing..."):
                 cloud_db.update_summary(date_str, current_user, new_summary)
-                if current_user == "ryo": 
-                    database.update_local_text(date_str, new_summary)
             st.session_state[edit_mode_key] = False
             st.success("Finalized!")
             st.rerun()
@@ -168,9 +145,7 @@ if date_str in db:
         if col2.button("Cancel"):
             st.session_state[edit_mode_key] = False
             st.rerun()
-
     else:
-        # CLEAN SLATE
         st.markdown(entry["summary"])
         if st.button("✏️ Edit Text"):
             st.session_state[edit_mode_key] = True
@@ -188,29 +163,20 @@ if date_str in db:
     else:
         st.info("No audio available.")
 
-    # 4. PRIVACY SETTINGS (Always Editable)
+    # 4. PRIVACY
     if not is_read_only:
         st.markdown("---")
         st.subheader("🔒 Privacy")
-        
         current_privacy = entry.get("is_public", False)
-        
-        new_privacy = st.toggle(
-            "🌍 Make Public (Friends can see)", 
-            value=current_privacy,
-            key=f"privacy_toggle_{date_str}"
-        )
+        new_privacy = st.toggle("🌍 Make Public (Friends can see)", value=current_privacy, key=f"privacy_toggle_{date_str}")
         
         if new_privacy != current_privacy:
             cloud_db.update_privacy(date_str, current_user, new_privacy)
-            if current_user == "ryo":
-                database.update_local_privacy(date_str, new_privacy)
             st.toast(f"Privacy updated: {'Public' if new_privacy else 'Private'}")
             entry["is_public"] = new_privacy
-            db[date_str]["is_public"] = new_privacy
 
 # ==========================================
-# 5. RECORD MODE (4 Steps)
+# 5. RECORD MODE
 # ==========================================
 else:
     if is_read_only:
@@ -220,9 +186,11 @@ else:
     # STEP 1: PHOTO
     if st.session_state.step == 1:
         st.info("Step 1: Choose a photo")
-        suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
         
+        # A. Try Mac Photos
+        suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
         if suggested_photos:
+            st.write("📸 From your Mac Library:")
             cols = st.columns(3)
             for idx, photo_path in enumerate(suggested_photos):
                 img_data = image_loader.load_image_for_streamlit(photo_path)
@@ -235,20 +203,18 @@ else:
                             st.rerun()
             st.markdown("---")
 
-        # 3. The "iPhone Friendly" Upload Button
+        # B. Upload Button (Mobile Friendly)
         st.write("📂 Upload from Device (iPhone/Android/PC):")
         uploaded_file = st.file_uploader("Pick a photo...", type=['jpg', 'jpeg', 'png', 'heic'])
         
         if uploaded_file is not None:
-            # We need to save this to a temp file so the rest of your code can read it
             temp_filename = f"temp_upload_{selected_date}.jpg"
             with open(temp_filename, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            
             st.session_state.selected_photo = temp_filename
             st.session_state.step = 2
             st.rerun()
-        
+
         st.markdown("---")
         if st.button("Skip / No Photo"):
             st.session_state.selected_photo = None
@@ -273,7 +239,7 @@ else:
             st.session_state.step = 3
             st.rerun()
 
-    # STEP 3: REVIEW & EDIT
+    # STEP 3: REVIEW
     elif st.session_state.step == 3:
         st.info("Step 3: Review Draft")
         
@@ -297,39 +263,25 @@ else:
                 st.session_state.step = 4
                 st.rerun()
 
-    # STEP 4: PRIVACY & SAVE
+    # STEP 4: SAVE
     elif st.session_state.step == 4:
         st.info("Step 4: Finalize & Upload")
         st.subheader("🔒 Privacy Settings")
-        
         is_public = st.toggle("🌍 Make Public (Friends can see)", value=False)
         st.markdown("---")
         
         if st.button("🚀 Upload & Save"):
-            with st.spinner("Saving to Diary..."):
+            with st.spinner("Saving to Cloud..."):
                 try:
-                    # 1. Local Save
-                    if current_user == "ryo":
-                        database.save_entry(
-                            date_str, 
-                            st.session_state.temp_summary, 
-                            st.session_state.temp_audio, 
-                            st.session_state.selected_photo, 
-                            is_edited=st.session_state.is_edited_flag,
-                            is_public=is_public
-                        )
-
-                    # 2. Cloud Save
                     cloud_db.save_to_cloud(
                         date_str, 
                         st.session_state.temp_summary, 
                         f"recordings/{date_str}.wav", 
                         st.session_state.selected_photo,
-                        user_id=st.session_state.logged_in_user,
+                        user_id=current_user,
                         is_public=is_public,
                         is_edited=st.session_state.is_edited_flag
                     )
-                    
                     st.toast("✅ Saved Successfully!")
                     del st.session_state.temp_summary
                     del st.session_state.temp_audio
