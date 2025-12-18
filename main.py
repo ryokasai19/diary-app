@@ -90,7 +90,6 @@ if st.sidebar.button("Log Out"):
     st.session_state.logged_in_user = None
     st.rerun()
 
-st.title("Chit Chat! 😋")
 
 # --- SIDEBAR: SEARCH ---
 st.sidebar.header("🔍 Search Memories")
@@ -106,7 +105,7 @@ view_mode = st.sidebar.radio("View Mode", ["📖 My Diary", "👥 Friends"])
 active_user_view = current_user # Default to viewing myself
 
 # --- FRIEND LOGIC ---
-if view_mode == "👥 Friends":
+if view_mode.startswith("👥 Friends"):
     st.sidebar.header("Your Friends")
     
     # 1. Get List of Friends
@@ -122,7 +121,6 @@ if view_mode == "👥 Friends":
     
     
     if selected_friend:
-        st.subheader(f"📖 Viewing {selected_friend}'s Diary")
         # Load THEIR public entries
         db = cloud_db.fetch_entries_by_user(selected_friend, viewer_is_owner=False)
         is_read_only = True
@@ -163,6 +161,15 @@ else:
     db = cloud_db.fetch_entries_by_user(current_user, viewer_is_owner=True)
     is_read_only = False
     active_user_view = current_user
+
+# ==========================================
+# DYNAMIC HEADER (Place this AFTER the Sidebar Logic)
+# ==========================================
+if active_user_view == current_user:
+    st.title("Chit Chat! 😋")
+else:
+    st.title(f"📖 {active_user_view.title()}'s Diary")
+    st.caption(f"👀 You are viewing {active_user_view}'s public entries.")
 # --- CALENDAR SETUP ---
 def go_to_date(new_date):
     st.session_state.date_picker = new_date

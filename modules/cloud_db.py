@@ -8,8 +8,21 @@ load_dotenv()
 # 2. Robust Key Fetcher
 # Tries Streamlit Secrets first (Cloud), then Environment Variables (Local)
 def get_secret(key):
-    if key in st.secrets:
-        return st.secrets[key]
+    """
+    Tries to get secret from Streamlit Cloud. 
+    If that fails (because we are local and have no secrets.toml), 
+    it falls back to the .env file.
+    """
+    try:
+        # Try checking Streamlit secrets first
+        if key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        # If secrets.toml doesn't exist, Streamlit throws an error.
+        # We catch it here and ignore it, so we can use .env instead.
+        pass
+
+    # Fallback to Environment Variables (Local .env)
     return os.getenv(key)
 
 # Prefer Streamlit secrets, then fall back to environment
