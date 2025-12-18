@@ -12,15 +12,21 @@ def get_secret(key):
         return st.secrets[key]
     return os.getenv(key)
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Prefer Streamlit secrets, then fall back to environment
+SUPABASE_URL = get_secret("SUPABASE_URL")
+SUPABASE_KEY = get_secret("SUPABASE_KEY")
 
+supabase: Client | None = None
 if not SUPABASE_URL or not SUPABASE_KEY:
     # This prevents the app from crashing silently if keys are missing
     print("⚠️ Error: Supabase keys are missing from .env or Secrets.")
-
-# Initialize
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    try:
+        # Initialize
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"❌ Supabase init error: {e}")
+        supabase = None
 
 def upload_file(file_data, destination_path, bucket_name="diary_assets"):
     """
@@ -56,6 +62,10 @@ def save_to_cloud(date_str, summary, local_audio_path, local_image_path, user_id
     """Saves entry with privacy AND edit status."""
     print(f"☁️ Syncing {date_str} (Public: {is_public}, Edited: {is_edited})...")
 
+    if supabase is None:
+        print("❌ Supabase client not initialized; skipping cloud save.")
+        return False
+
     # 1. Upload Audio (Pass BOTH the file path AND the cloud destination)
     audio_url = upload_file(local_audio_path, f"audio/{user_id}/{date_str}.wav")
     
@@ -88,6 +98,8 @@ def save_to_cloud(date_str, summary, local_audio_path, local_image_path, user_id
 def fetch_entries_by_user(target_user_id):
     """Downloads all diary entries for a specific friend."""
     try:
+        if supabase is None:
+            return {}
         response = supabase.table("entries").select("*").eq("user_id", target_user_id).execute()
         
         # Convert list of rows into our dictionary format: { "2025-12-17": { ... } }
@@ -111,6 +123,8 @@ def fetch_entries_by_user(target_user_id):
 def update_summary(date_str, user_id, new_summary):
     """Updates only the text summary of an entry."""
     try:
+        if supabase is None:
+            return False
         supabase.table("entries").update({
             "summary": new_summary,
             "is_edited": True
@@ -126,6 +140,8 @@ def fetch_entries_by_user(target_user_id, viewer_is_owner=False):
     If viewer_is_owner is False, ONLY fetches public entries.
     """
     try:
+        if supabase is None:
+            return {}
         query = supabase.table("entries").select("*").eq("user_id", target_user_id)
         
         # KEY LOGIC: If I'm not the owner, force the 'is_public' filter
@@ -156,6 +172,8 @@ def fetch_entries_by_user(target_user_id, viewer_is_owner=False):
 def update_privacy(date_str, user_id, is_public):
     """Updates just the privacy setting."""
     try:
+        if supabase is None:
+            return False
         supabase.table("entries").update({
             "is_public": is_public
         }).eq("user_id", user_id).eq("date", date_str).execute()
@@ -168,6 +186,8 @@ def update_privacy(date_str, user_id, is_public):
 def check_login(username, password):
     """Verifies username and password against Supabase."""
     try:
+        if supabase is None:
+            return False
         # Query the 'app_users' table we just created
         response = supabase.table("app_users").select("*")\
             .eq("username", username)\
@@ -194,6 +214,8 @@ def sign_up(username, password):
     email = f"{username}@{DUMMY_DOMAIN}"
     
     try:
+        if supabase is None:
+            return False
         response = supabase.auth.sign_up({
             "email": email,
             "password": password,
@@ -219,6 +241,8 @@ def login(username, password):
     email = f"{username}@{DUMMY_DOMAIN}"
     
     try:
+        if supabase is None:
+            return None
         response = supabase.auth.sign_in_with_password({
             "email": email,
             "password": password
@@ -235,6 +259,8 @@ def get_current_user():
     Checks if there is a valid session locally (in the Supabase client).
     Returns the username if logged in, None otherwise.
     """
+    if supabase is None:
+        return None
     session = supabase.auth.get_session()
     if session:
         # If the token is valid, get the metadata (username)
@@ -248,6 +274,8 @@ def get_pending_requests(username):
     Returns list of people waiting for YOU to accept.
     """
     try:
+        if supabase is None:
+            return []
         res = supabase.table("friends").select("*").eq("receiver", username).eq("status", "pending").execute()
         return res.data
     except:
@@ -260,6 +288,8 @@ def get_my_friends(username):
     Checks both 'Sender' and 'Receiver' columns for 'accepted' status.
     """
     try:
+        if supabase is None:
+            return []
         # Find rows where I am sender OR receiver, AND status is accepted
         res = supabase.table("friends").select("*").or_(f"sender.eq.{username},receiver.eq.{username}").eq("status", "accepted").execute()
         
@@ -279,6 +309,8 @@ def logout():
     Destroys the Supabase session so auto-login doesn't trigger again.
     """
     try:
+        if supabase is None:
+            return
         supabase.auth.sign_out()
     except Exception as e:
         print(f"Logout Error: {e}")
@@ -286,6 +318,8 @@ def logout():
 # 1. NEW: Generic Notification Function
 def add_notification(target_user, message):
     try:
+        if supabase is None:
+            return
         supabase.table("notifications").insert({
             "user_id": target_user,
             "message": message
@@ -299,6 +333,8 @@ def check_notifications(username):
     Reads unread notifications, returns them, and marks them as read.
     """
     try:
+        if supabase is None:
+            return []
         # Fetch unread
         res = supabase.table("notifications").select("*").eq("user_id", username).eq("is_read", False).execute()
         notifs = res.data
@@ -318,6 +354,8 @@ def send_friend_request(from_user, to_user):
         return False, "You can't add yourself 😜"
 
     try:
+        if supabase is None:
+            return False, "Supabase not configured."
         # A. Create the Friend Request
         supabase.table("friends").insert({
             "sender": from_user,
