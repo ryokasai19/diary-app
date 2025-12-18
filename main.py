@@ -2,6 +2,8 @@ import streamlit as st
 import datetime
 import os
 from modules import ai, mac_photos, image_loader, cloud_db
+from PIL import Image, ExifTags
+
 
 # ==========================================
 # 1. INITIALIZATION
@@ -208,12 +210,43 @@ else:
         uploaded_file = st.file_uploader("Pick a photo...", type=['jpg', 'jpeg', 'png', 'heic'])
         
         if uploaded_file is not None:
-            temp_filename = f"temp_upload_{selected_date}.jpg"
-            with open(temp_filename, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.session_state.selected_photo = temp_filename
-            st.session_state.step = 2
-            st.rerun()
+            try:
+                # 1. Open Image to check metadata
+                img = Image.open(uploaded_file)
+                exif_data = img._getexif()
+                photo_date = None
+
+                if exif_data:
+                    # Look for DateTimeOriginal (Tag 36867)
+                    for tag, value in exif_data.items():
+                        tag_name = ExifTags.TAGS.get(tag, tag)
+                        if tag_name == "DateTimeOriginal":
+                            # Format is usually "YYYY:MM:DD HH:MM:SS"
+                            date_part = value.split(" ")[0].replace(":", "-")
+                            photo_date = date_part
+                            break
+                
+                # 2. Validate Date
+                target_date_str = str(selected_date)
+                
+                if photo_date and photo_date != target_date_str:
+                    st.error(f"⚠️ Date Mismatch! This photo was taken on {photo_date}, but you are writing for {target_date_str}.")
+                    # Don't save it.
+                else:
+                    if not photo_date:
+                        st.warning("⚠️ No date found in photo metadata. Accepting anyway (be careful!).")
+                    
+                    # 3. Save Temp File (Only if valid)
+                    temp_filename = f"temp_upload_{selected_date}.jpg"
+                    with open(temp_filename, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    st.session_state.selected_photo = temp_filename
+                    st.session_state.step = 2
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Error processing image: {e}")
 
         st.markdown("---")
         if st.button("Skip / No Photo"):
