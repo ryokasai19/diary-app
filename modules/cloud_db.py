@@ -134,3 +134,14 @@ def fetch_entries_by_user(target_user_id, viewer_is_owner=False):
     except Exception as e:
         print(f"❌ Fetch Error: {e}")
         return {}
+
+def update_privacy(date_str, user_id, is_public):
+    """Updates just the privacy setting."""
+    try:
+        supabase.table("entries").update({
+            "is_public": is_public
+        }).eq("user_id", user_id).eq("date", date_str).execute()
+        return True
+    except Exception as e:
+        print(f"❌ Privacy Update Error: {e}")
+        return False

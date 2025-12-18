@@ -18,7 +18,7 @@ def summarize_audio(audio_bytes):
         myfile = genai.upload_file(temp_path)
         
         # Generate
-        model = genai.GenerativeModel("gemini-flash-latest")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         result = model.generate_content([
             """
             Summarize this audio into a concise bulleted list (max 5 points).

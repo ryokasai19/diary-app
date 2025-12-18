@@ -127,8 +127,13 @@ if date_str in db:
             # Update Cloud
             cloud_db.update_summary(date_str, current_user, new_summary)
             # Update Local
-            if current_user == "ryo": 
-                database.update_local_text(date_str, new_summary)
+            with st.spinner("Finalizing entry..."):
+                # 1. Update Cloud
+                cloud_db.update_summary(date_str, current_user, new_summary)
+                
+                # 2. Update Local (only if on my Mac)
+                if current_user == "ryo": 
+                    database.update_local_text(date_str, new_summary)
             
             st.session_state[edit_mode_key] = False
             st.success("Finalized!")
@@ -156,6 +161,36 @@ if date_str in db:
         st.audio(audio_url)
     else:
         st.info("No audio available.")
+
+    # 4. PRIVACY SETTINGS (Always Editable)
+    # Only show this control if it is MY diary
+    if not is_read_only:
+        st.markdown("---")
+        st.subheader("🔒 Privacy")
+        
+        # Get current state (Default to False if missing)
+        current_privacy = entry.get("is_public", False)
+        
+        # The Toggle
+        new_privacy = st.toggle(
+            "🌍 Make Public (Friends can see)", 
+            value=current_privacy,
+            key=f"privacy_toggle_{date_str}"
+        )
+        
+        # Logic: If the toggle changed, save immediately
+        if new_privacy != current_privacy:
+            # 1. Update Cloud
+            cloud_db.update_privacy(date_str, current_user, new_privacy)
+            
+            # 2. Update Local
+            database.update_local_privacy(date_str, new_privacy)
+            
+            # 3. Refresh to lock in the new state
+            st.toast(f"Privacy updated: {'Public' if new_privacy else 'Private'}")
+            # We manually update the cache so we don't need a full reload
+            entry["is_public"] = new_privacy
+            db[date_str]["is_public"] = new_privacy
 
 # ==========================================
 # 4. RECORD MODE (The Linear 4-Step Flow)
@@ -242,32 +277,35 @@ else:
         st.markdown("---")
         
         if st.button("🚀 Upload & Save"):
-            try:
-                # Local Save
-                database.save_entry(
-                    date_str, 
-                    st.session_state.temp_summary, 
-                    st.session_state.temp_audio, 
-                    st.session_state.selected_photo, 
-                    is_edited=st.session_state.is_edited_flag
-                )
+            with st.spinner("Saving to Diary..."): # Added spinner here too!
+                try:
+                    # 1. Local Save (Updated to pass is_public)
+                    database.save_entry(
+                        date_str, 
+                        st.session_state.temp_summary, 
+                        st.session_state.temp_audio, 
+                        st.session_state.selected_photo, 
+                        is_edited=st.session_state.is_edited_flag,
+                        is_public=is_public  # <--- PASS THE TOGGLE VALUE
+                    )
 
-                # Cloud Save
-                cloud_db.save_to_cloud(
-                    date_str, 
-                    st.session_state.temp_summary, 
-                    f"recordings/{date_str}.wav", 
-                    st.session_state.selected_photo,
-                    user_id="ryo",
-                    is_public=is_public,
-                    is_edited=st.session_state.is_edited_flag
-                )
-                
-                st.toast("✅ Saved Successfully!")
-                # Cleanup
-                del st.session_state.temp_summary
-                del st.session_state.temp_audio
-                st.session_state.step = 1
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error saving: {e}")
+                    # 2. Cloud Save
+                    cloud_db.save_to_cloud(
+                        date_str, 
+                        st.session_state.temp_summary, 
+                        f"recordings/{date_str}.wav", 
+                        st.session_state.selected_photo,
+                        user_id=st.session_state.logged_in_user,
+                        is_public=is_public,
+                        is_edited=st.session_state.is_edited_flag
+                    )
+                    
+                    st.toast("✅ Saved Successfully!")
+                    # Cleanup
+                    del st.session_state.temp_summary
+                    del st.session_state.temp_audio
+                    st.session_state.step = 1
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error saving: {e}")

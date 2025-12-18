@@ -19,35 +19,28 @@ def load_db():
     with open(DB_FILE, "r") as f:
         return json.load(f)
 
-def save_entry(date_str, summary_text, audio_bytes, image_source_path=None, is_edited = False):
-    """Saves a new entry to the JSON HashMap and the Audio file."""
-    # 1. Save Audio
-    filename = f"{AUDIO_DIR}/{date_str}.wav"
-    with open(filename, "wb") as f:
+def save_entry(date_str, summary, audio_bytes, image_path, is_edited=False, is_public=False):
+    """Saves entry locally with is_edited AND is_public flags."""
+    
+    # 1. Save Audio File
+    local_audio_path = f"recordings/{date_str}.wav"
+    if not os.path.exists("recordings"):
+        os.makedirs("recordings")
+        
+    with open(local_audio_path, "wb") as f:
         f.write(audio_bytes)
     
-
-    # 2. Save Image
-    saved_image_path = None
-    if image_source_path:
-        # Get the file extension (e.g., .heic or .jpg)
-        ext = os.path.splitext(image_source_path)[1]
-        image_filename = f"{date_str}{ext}"
-        saved_image_path = os.path.join(IMAGE_DIR, image_filename)
-        
-        # Copy the file from Mac Photos to our app folder
-        shutil.copy2(image_source_path, saved_image_path)
-
-    # 3. Update DB
+    # 2. Update Local Database
     db = load_db()
     db[date_str] = {
-        "summary": summary_text,
-        "audio_path": filename,
-        "image_path": saved_image_path,
-        "is_edited": is_edited
+        "summary": summary,
+        "audio_path": local_audio_path,
+        "image_path": image_path,
+        "image_url": None,
+        "is_edited": is_edited,
+        "is_public": is_public  # <--- NOW SAVING THIS
     }
     
-    # 4. Save JSON
     with open(DB_FILE, "w") as f:
         json.dump(db, f, indent=4)
 
@@ -61,5 +54,13 @@ def update_local_text(date_str, new_text):
         db[date_str]["is_edited"] = True
         
         # Save back to disk (using the same logic as save_entry)
+        with open(DB_FILE, "w") as f:
+            json.dump(db, f, indent=4)
+
+def update_local_privacy(date_str, is_public):
+    """Updates just the privacy setting locally."""
+    db = load_db()
+    if date_str in db:
+        db[date_str]["is_public"] = is_public
         with open(DB_FILE, "w") as f:
             json.dump(db, f, indent=4)
