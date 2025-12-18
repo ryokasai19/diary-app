@@ -11,6 +11,14 @@ from PIL import Image, ExifTags
 if "logged_in_user" not in st.session_state:
     st.session_state.logged_in_user = None
 
+# If we aren't logged in, ask Supabase: "Do you remember this person?"
+if not st.session_state.logged_in_user:
+    # This checks the browser's local storage for a token
+    auto_user = cloud_db.get_current_user()
+    if auto_user:
+        st.session_state.logged_in_user = auto_user
+        st.toast(f"Welcome back, {auto_user}!")
+
 if "step" not in st.session_state:
     st.session_state.step = 1
 

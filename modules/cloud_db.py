@@ -217,3 +217,14 @@ def login(email, password):
     except Exception as e:
         print(f"Login Error: {e}")
         return None
+
+def get_current_user():
+    """
+    Checks if there is a valid session locally (in the Supabase client).
+    Returns the username if logged in, None otherwise.
+    """
+    session = supabase.auth.get_session()
+    if session:
+        # If the token is valid, get the metadata (username)
+        return session.user.user_metadata.get("username")
+    return None
