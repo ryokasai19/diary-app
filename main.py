@@ -227,8 +227,21 @@ else:
                             st.session_state.selected_photo = photo_path
                             st.session_state.step = 2 
                             st.rerun()
-        else:
-            st.warning("No photos found.")
+            st.markdown("---")
+
+        # 3. The "iPhone Friendly" Upload Button
+        st.write("📂 Upload from Device (iPhone/Android/PC):")
+        uploaded_file = st.file_uploader("Pick a photo...", type=['jpg', 'jpeg', 'png', 'heic'])
+        
+        if uploaded_file is not None:
+            # We need to save this to a temp file so the rest of your code can read it
+            temp_filename = f"temp_upload_{selected_date}.jpg"
+            with open(temp_filename, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            
+            st.session_state.selected_photo = temp_filename
+            st.session_state.step = 2
+            st.rerun()
         
         st.markdown("---")
         if st.button("Skip / No Photo"):

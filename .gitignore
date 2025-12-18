@@ -1,6 +1,7 @@
 .env
 venv/
 __pycache__/
+.DS_Store
 
 #---private data---
 diary_db.json
@@ -9,3 +10,7 @@ audio_files/
 image_files/
 image_path/
 firebase_key.json
+temp_upload_*.jpg
+temp_upload_*.png
+temp_upload_*.heic
+*.wav
