@@ -182,40 +182,52 @@ def check_login(username, password):
 
 # ... inside modules/cloud_db.py ...
 
-def sign_up(email, password, username):
+# Configuration
+DUMMY_DOMAIN = "diary.local" # The invisible email suffix
+
+def sign_up(username, password):
     """
-    Creates a new secure user in Supabase.
-    Saves the 'username' (e.g., 'ryo') in the metadata so we can find their diary.
+    Registers a new user using ONLY username and password.
+    Behind the scenes, it creates 'username@diary.local'.
     """
+    # 1. Create the 'fake' email
+    email = f"{username}@{DUMMY_DOMAIN}"
+    
     try:
         response = supabase.auth.sign_up({
             "email": email,
             "password": password,
             "options": {
                 "data": {
-                    "username": username.lower() # Save "ryo" here
+                    "username": username.lower() # Store plain username in metadata
                 }
             }
         })
-        return response
+        # If successful, response.user will exist
+        if response.user:
+            return True
+        return False
     except Exception as e:
-        return None
+        print(f"Sign Up Error: {e}")
+        return False
 
-def login(email, password):
+def login(username, password):
     """
-    Logs in using Supabase Auth.
-    Returns the 'username' (e.g., 'ryo') if successful.
+    Logs in using ONLY username and password.
     """
+    # 1. Reconstruct the 'fake' email
+    email = f"{username}@{DUMMY_DOMAIN}"
+    
     try:
         response = supabase.auth.sign_in_with_password({
             "email": email,
             "password": password
         })
-        # Extract the username we saved during sign up
+        # 2. Return the clean username (from metadata)
         user_meta = response.user.user_metadata
         return user_meta.get("username")
     except Exception as e:
-        print(f"Login Error: {e}")
+        # Don't print the error to user, just return None
         return None
 
 def get_current_user():
@@ -228,3 +240,70 @@ def get_current_user():
         # If the token is valid, get the metadata (username)
         return session.user.user_metadata.get("username")
     return None
+
+
+def send_friend_request(from_user, to_user):
+    """
+    Sends a request. Fails if one already exists.
+    """
+    if from_user == to_user:
+        return False, "You can't add yourself 😜"
+
+    # Check if user actually exists (Optional, but good UX)
+    # (We skip for speed, Supabase will just store the name)
+
+    try:
+        # We try to insert. If it fails (duplicate), the 'except' catches it.
+        supabase.table("friends").insert({
+            "sender": from_user,
+            "receiver": to_user,
+            "status": "pending"
+        }).execute()
+        return True, "Request sent!"
+    except Exception as e:
+        return False, "Request already sent or error occurred."
+
+def get_pending_requests(username):
+    """
+    Returns list of people waiting for YOU to accept.
+    """
+    try:
+        res = supabase.table("friends").select("*").eq("receiver", username).eq("status", "pending").execute()
+        return res.data
+    except:
+        return []
+
+def accept_friend(request_id):
+    """
+    Changes status from 'pending' to 'accepted'.
+    """
+    supabase.table("friends").update({"status": "accepted"}).eq("id", request_id).execute()
+
+def get_my_friends(username):
+    """
+    Returns a simple list of usernames: ['syd', 'alex']
+    Checks both 'Sender' and 'Receiver' columns for 'accepted' status.
+    """
+    try:
+        # Find rows where I am sender OR receiver, AND status is accepted
+        res = supabase.table("friends").select("*").or_(f"sender.eq.{username},receiver.eq.{username}").eq("status", "accepted").execute()
+        
+        friends = []
+        for row in res.data:
+            # If I was the sender, the friend is the receiver (and vice versa)
+            if row["sender"] == username:
+                friends.append(row["receiver"])
+            else:
+                friends.append(row["sender"])
+        return friends
+    except:
+        return []
+
+def logout():
+    """
+    Destroys the Supabase session so auto-login doesn't trigger again.
+    """
+    try:
+        supabase.auth.sign_out()
+    except Exception as e:
+        print(f"Logout Error: {e}")

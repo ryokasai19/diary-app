@@ -25,50 +25,48 @@ if "step" not in st.session_state:
 if "selected_photo" not in st.session_state:
     st.session_state.selected_photo = None
 
-# ==========================================
-# 2. LOGIN GATE (ROBUST VERSION)
+## ==========================================
+# 2. LOGIN GATE (USERNAME ONLY)
 # ==========================================
 if not st.session_state.logged_in_user:
     st.title("🔒 Diary Login")
     
-    # Create Tabs for cleaner UI
     tab1, tab2 = st.tabs(["Log In", "Sign Up"])
     
     # --- LOGIN TAB ---
     with tab1:
         st.subheader("Welcome Back")
-        l_email = st.text_input("Email", key="l_email")
+        l_user = st.text_input("Username", key="l_user").strip().lower()
         l_pass = st.text_input("Password", type="password", key="l_pass")
         
-        if st.button("Log In"):
-            with st.spinner("Checking credentials..."):
-                username = cloud_db.login(l_email, l_pass)
+        if st.button("Log In", key="btn_login"):
+            with st.spinner("Unlocking..."):
+                username = cloud_db.login(l_user, l_pass)
                 if username:
                     st.session_state.logged_in_user = username
                     st.success(f"Welcome back, {username}!")
                     st.rerun()
                 else:
-                    st.error("❌ Invalid email or password.")
+                    st.error("❌ User not found or wrong password.")
 
     # --- SIGN UP TAB ---
     with tab2:
-        st.subheader("Create Account")
-        s_email = st.text_input("Email", key="s_email")
-        s_user = st.text_input("Pick a Username (e.g. ryo)", key="s_user")
-        s_pass = st.text_input("Password (has to be longer than 5 chars)", type="password", key="s_pass")
+        st.subheader("New Account")
+        s_user = st.text_input("Pick a Username", key="s_user").strip().lower()
+        s_pass = st.text_input("Set a Password", type="password", key="s_pass")
         
-        if st.button("Create Account"):
-            if s_user and s_email and s_pass:
-                with st.spinner("Creating secure account..."):
-                    # Check if username is already taken (Optional but good)
-                    # For now, we just try to create the user
-                    res = cloud_db.sign_up(s_email, s_pass, s_user)
-                    if res:
-                        st.success("✅ Account created! Go to the 'Log In' tab.")
-                    else:
-                        st.error("Error: Email might be taken or password is too weak.")
+        if st.button("Create Account", key="btn_signup"):
+            if s_user and s_pass:
+                if len(s_pass) < 6:
+                    st.warning("⚠️ Password should be at least 6 characters.")
+                else:
+                    with st.spinner("Creating account..."):
+                        if cloud_db.sign_up(s_user, s_pass):
+                            st.success("✅ Success! Please switch to the 'Log In' tab.")
+                        else:
+                            st.error("❌ That username is already taken.")
             else:
-                st.warning("Please fill in all fields.")
+                st.warning("Please fill in both fields.")
     
     st.stop()
 
@@ -80,6 +78,7 @@ current_user = st.session_state.logged_in_user
 # Sidebar: Logout
 st.sidebar.title(f"👋 Hi, {current_user.title()}")
 if st.sidebar.button("Log Out"):
+    cloud_db.logout()
     st.session_state.logged_in_user = None
     st.rerun()
 
@@ -88,26 +87,71 @@ st.title("Chit Chat! 😋")
 # --- SIDEBAR: SEARCH ---
 st.sidebar.header("🔍 Search Memories")
 search_term = st.sidebar.text_input("Find keyword")
+# ... inside main.py ...
 
-# --- SIDEBAR: VIEW MODE ---
-view_mode = st.sidebar.radio("Mode", ["My Diary", "Friend's Diary"])
+# ==========================================
+# SIDEBAR: SOCIAL & NAVIGATION
+# ==========================================
+st.sidebar.markdown("---")
+view_mode = st.sidebar.radio("View Mode", ["📖 My Diary", "👥 Friends"])
 
-if view_mode == "Friend's Diary":
-    friend_name = st.sidebar.text_input("Enter Friend's Username:")
-    if friend_name:
-        db = cloud_db.fetch_entries_by_user(friend_name, viewer_is_owner=False)
+active_user_view = current_user # Default to viewing myself
+
+# --- FRIEND LOGIC ---
+if view_mode == "👥 Friends":
+    st.sidebar.header("Your Friends")
+    
+    # 1. Get List of Friends
+    my_friends = cloud_db.get_my_friends(current_user)
+    
+    if not my_friends:
+        st.sidebar.info("No friends yet. Add someone!")
+    
+    # 2. Show Friend Buttons
+    selected_friend = st.sidebar.radio("Pick a friend:", my_friends) if my_friends else None
+    
+    if selected_friend:
+        st.subheader(f"📖 Viewing {selected_friend}'s Diary")
+        # Load THEIR public entries
+        db = cloud_db.fetch_entries_by_user(selected_friend, viewer_is_owner=False)
         is_read_only = True
-        active_user_view = friend_name
+        active_user_view = selected_friend
     else:
+        # No friend selected (or no friends)
+        st.write("👈 Select a friend to see their updates.")
         db = {}
         is_read_only = True
-        active_user_view = "Unknown"
+
+    # 3. Add Friend & Requests (In an Expander to keep it clean)
+    with st.sidebar.expander("Manage Friends", expanded=False):
+        # A. Add Friend
+        st.caption("Add Friend")
+        new_friend = st.text_input("Username").lower()
+        if st.button("Send Request"):
+            success, msg = cloud_db.send_friend_request(current_user, new_friend)
+            if success: st.toast(msg)
+            else: st.error(msg)
+        
+        # B. Pending Requests
+        st.markdown("---")
+        st.caption("Pending Requests")
+        requests = cloud_db.get_pending_requests(current_user)
+        if requests:
+            for req in requests:
+                col1, col2 = st.columns([3, 1])
+                col1.write(f"**{req['sender']}**")
+                if col2.button("✅", key=f"accept_{req['id']}"):
+                    cloud_db.accept_friend(req['id'])
+                    st.rerun()
+        else:
+            st.caption("*No new requests*")
+
+# --- MY DIARY LOGIC ---
 else:
-    # "My Diary" - ALWAYS LOAD FROM CLOUD
+    # "My Diary" - Standard View
     db = cloud_db.fetch_entries_by_user(current_user, viewer_is_owner=True)
     is_read_only = False
     active_user_view = current_user
-
 # --- CALENDAR SETUP ---
 def go_to_date(new_date):
     st.session_state.date_picker = new_date
