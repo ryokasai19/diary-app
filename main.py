@@ -57,6 +57,11 @@ search_term = st.sidebar.text_input("Find keyword")
 # --- SIDEBAR: FRIEND VIEW ---
 view_mode = st.sidebar.radio("Mode", ["My Diary", "Friend's Diary"])
 
+# --- DEBUG INFO (Add this temporarily!) ---
+st.sidebar.markdown("---")
+st.sidebar.caption(f"👤 User: {current_user}")
+st.sidebar.caption(f"💻 Mode: {'Local' if current_user == 'ryo' else 'Cloud'}")
+
 if view_mode == "Friend's Diary":
     friend_name = st.sidebar.text_input("Enter Friend's Username:")
     if friend_name:
@@ -74,6 +79,7 @@ else:
     # Assumption: 'ryo' is the main user on this Mac
     if current_user == "ryo":
         db = database.load_db()
+        st.sidebar.caption(f"📂 Loaded {len(db)} local entries") # <--- TELLS US IF FILE IS EMPTY
         is_read_only = False
     else:
         # If logging in as someone else (like 'syd') on Ryo's computer, 

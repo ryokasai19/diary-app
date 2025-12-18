@@ -1,8 +1,17 @@
 import os
+import streamlit as st
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 2. Robust Key Fetcher
+# Tries Streamlit Secrets first (Cloud), then Environment Variables (Local)
+def get_secret(key):
+    if key in st.secrets:
+        return st.secrets[key]
+    return os.getenv(key)
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 

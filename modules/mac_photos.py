@@ -2,14 +2,17 @@ import sys
 import os
 import datetime
 
-# --- 1. SAFE IMPORT ---
-# Only import 'osxphotos' if we are actually on a Mac.
-# This prevents the "ModuleNotFoundError" on the Linux Cloud server.
+# DEBUG: Print exactly what system Python thinks this is
+print(f"🖥️ System Check: {sys.platform}")
+
 osxphotos = None
-if sys.platform == "darwin":
+if sys.platform == "darwin": # Darwin = Mac
     try:
         import osxphotos
-    except ImportError:
+        print("✅ Mac Photo Library: Loaded Successfully")
+    except ImportError as e:
+        print(f"❌ Mac Photo Library: Import Failed! ({e})")
+        # Try to continue without it, but we know it failed
         pass
 
 def get_photos_from_mac_library(target_date):
