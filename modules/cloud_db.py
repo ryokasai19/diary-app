@@ -145,3 +145,19 @@ def update_privacy(date_str, user_id, is_public):
     except Exception as e:
         print(f"❌ Privacy Update Error: {e}")
         return False
+
+
+def check_login(username, password):
+    """Verifies username and password against Supabase."""
+    try:
+        # Query the 'app_users' table we just created
+        response = supabase.table("app_users").select("*")\
+            .eq("username", username)\
+            .eq("password", password)\
+            .execute()
+        
+        # If we get data back, the user exists!
+        return len(response.data) > 0
+    except Exception as e:
+        print(f"Login Check Error: {e}")
+        return False
