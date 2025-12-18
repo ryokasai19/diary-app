@@ -1,10 +1,14 @@
 import os
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
-# --- CONFIGURATION (Paste from Supabase Settings -> API) ---
-SUPABASE_URL = "https://lryuqzddbhxbsdyzyxjb.supabase.co"
-SUPABASE_KEY = "sb_publishable_6U4tpUtaF4Nn7_mGfKP9ig_WAk_av4Q"
+load_dotenv()
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    # This prevents the app from crashing silently if keys are missing
+    print("⚠️ Error: Supabase keys are missing from .env or Secrets.")
 
 # Initialize
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
