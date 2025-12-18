@@ -230,7 +230,7 @@ else:
                 target_date_str = str(selected_date)
                 
                 if photo_date and photo_date != target_date_str:
-                    st.error(f"⚠️ Date Mismatch! This photo was taken on {photo_date}, but you are writing for {target_date_str}.")
+                    st.error(f"⚠️ Woah woah don't be sneaky! Date Mismatch! This photo was taken on {photo_date}, but you are writing for {target_date_str}.")
                     # Don't save it.
                 else:
                     if not photo_date:
@@ -309,7 +309,7 @@ else:
                     cloud_db.save_to_cloud(
                         date_str, 
                         st.session_state.temp_summary, 
-                        f"recordings/{date_str}.wav", 
+                        st.session_state.temp_audio,
                         st.session_state.selected_photo,
                         user_id=current_user,
                         is_public=is_public,

@@ -22,28 +22,33 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 # Initialize
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def upload_file(local_path, destination_path):
-    """Uploads file to Supabase Storage and returns public URL."""
-    if not local_path or not os.path.exists(local_path):
-        return None
-    
+def upload_file(file_data, destination_path, bucket_name="diary_assets"):
+    """
+    Uploads a file (path string OR raw bytes) to Supabase Storage.
+    Returns the Public URL.
+    """
     try:
-        bucket = "diary_uploads"
-        
-        with open(local_path, 'rb') as f:
-            # Upsert=True means "overwrite if it already exists"
-            supabase.storage.from_(bucket).upload(
-                file=f,
+        # Check if file_data is bytes (from memory) or string (file path)
+        if isinstance(file_data, bytes):
+            # Upload bytes directly
+            supabase.storage.from_(bucket_name).upload(
                 path=destination_path,
-                file_options={"content-type": "application/octet-stream", "upsert": "true"}
+                file=file_data,
+                file_options={"content-type": "audio/wav"} # Force correct type
             )
+        else:
+            # It's a file path (string), open and upload
+            with open(file_data, 'rb') as f:
+                supabase.storage.from_(bucket_name).upload(
+                    path=destination_path,
+                    file=f
+                )
         
-        # Get the clean Public URL
-        public_url = supabase.storage.from_(bucket).get_public_url(destination_path)
-        return public_url
+        # Get Public URL
+        return supabase.storage.from_(bucket_name).get_public_url(destination_path)
         
     except Exception as e:
-        print(f"⚠️ Cloud Upload Error: {e}")
+        print(f"Upload Error: {e}")
         return None
 
 
