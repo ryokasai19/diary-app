@@ -71,6 +71,14 @@ if not st.session_state.logged_in_user:
     st.stop()
 
 # ==========================================
+# CHECK NOTIFICATIONS (New!)
+# ==========================================
+# This runs every time you click a button or refresh
+new_notifs = cloud_db.check_notifications(st.session_state.logged_in_user)
+for msg in new_notifs:
+    st.toast(msg, icon="🔔") # Shows a nice popup in the corner
+
+# ==========================================
 # 3. MAIN APP SETUP
 # ==========================================
 current_user = st.session_state.logged_in_user
@@ -106,9 +114,12 @@ if view_mode == "👥 Friends":
     
     if not my_friends:
         st.sidebar.info("No friends yet. Add someone!")
+        selected_friend = None
+    else:
+        # 2. Show Friend Buttons
+        selected_friend = st.sidebar.radio("Pick a friend:", my_friends) if my_friends else None
+
     
-    # 2. Show Friend Buttons
-    selected_friend = st.sidebar.radio("Pick a friend:", my_friends) if my_friends else None
     
     if selected_friend:
         st.subheader(f"📖 Viewing {selected_friend}'s Diary")

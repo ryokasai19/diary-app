@@ -242,26 +242,6 @@ def get_current_user():
     return None
 
 
-def send_friend_request(from_user, to_user):
-    """
-    Sends a request. Fails if one already exists.
-    """
-    if from_user == to_user:
-        return False, "You can't add yourself 😜"
-
-    # Check if user actually exists (Optional, but good UX)
-    # (We skip for speed, Supabase will just store the name)
-
-    try:
-        # We try to insert. If it fails (duplicate), the 'except' catches it.
-        supabase.table("friends").insert({
-            "sender": from_user,
-            "receiver": to_user,
-            "status": "pending"
-        }).execute()
-        return True, "Request sent!"
-    except Exception as e:
-        return False, "Request already sent or error occurred."
 
 def get_pending_requests(username):
     """
@@ -273,11 +253,6 @@ def get_pending_requests(username):
     except:
         return []
 
-def accept_friend(request_id):
-    """
-    Changes status from 'pending' to 'accepted'.
-    """
-    supabase.table("friends").update({"status": "accepted"}).eq("id", request_id).execute()
 
 def get_my_friends(username):
     """
@@ -307,3 +282,80 @@ def logout():
         supabase.auth.sign_out()
     except Exception as e:
         print(f"Logout Error: {e}")
+
+# 1. NEW: Generic Notification Function
+def add_notification(target_user, message):
+    try:
+        supabase.table("notifications").insert({
+            "user_id": target_user,
+            "message": message
+        }).execute()
+    except Exception as e:
+        print(f"Notif Error: {e}")
+
+# 2. NEW: Check & Clear Notifications
+def check_notifications(username):
+    """
+    Reads unread notifications, returns them, and marks them as read.
+    """
+    try:
+        # Fetch unread
+        res = supabase.table("notifications").select("*").eq("user_id", username).eq("is_read", False).execute()
+        notifs = res.data
+        
+        if notifs:
+            # Mark as read immediately so they don't show up twice
+            notif_ids = [n['id'] for n in notifs]
+            supabase.table("notifications").update({"is_read": True}).in_("id", notif_ids).execute()
+            
+        return [n['message'] for n in notifs]
+    except:
+        return []
+
+# 3. UPDATE: Send Friend Request (Now sends notification!)
+def send_friend_request(from_user, to_user):
+    if from_user == to_user:
+        return False, "You can't add yourself 😜"
+
+    try:
+        # A. Create the Friend Request
+        supabase.table("friends").insert({
+            "sender": from_user,
+            "receiver": to_user,
+            "status": "pending"
+        }).execute()
+        
+        # B. Notify the Receiver
+        add_notification(to_user, f"👋 New friend request from {from_user}!")
+        
+        return True, "Request sent!"
+    except Exception as e:
+        return False, "Request already sent or user not found."
+
+# 4. UPDATE: Accept Friend (Now sends notification!)
+def accept_friend(request_id):
+    try:
+        # A. Look up the request row so we know who to notify
+        select_res = (
+            supabase
+            .table("friends")
+            .select("*")
+            .eq("id", request_id)
+            .execute()
+        )
+
+        if not select_res.data:
+            return
+
+        friend_row = select_res.data[0]
+        sender_name = friend_row["sender"]
+        receiver_name = friend_row["receiver"]
+
+        # B. Update status to accepted
+        supabase.table("friends").update({"status": "accepted"}).eq("id", request_id).execute()
+
+        # C. Notify the sender
+        add_notification(sender_name, f"✅ {receiver_name} accepted your friend request!")
+
+    except Exception as e:
+        print(f"Accept Error: {e}")
