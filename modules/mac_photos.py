@@ -1,12 +1,29 @@
-import osxphotos
-import datetime
+import sys
 import os
+import datetime
+
+# --- 1. SAFE IMPORT ---
+# Only import 'osxphotos' if we are actually on a Mac.
+# This prevents the "ModuleNotFoundError" on the Linux Cloud server.
+osxphotos = None
+if sys.platform == "darwin":
+    try:
+        import osxphotos
+    except ImportError:
+        pass
 
 def get_photos_from_mac_library(target_date):
     """
-    Fetches photos using Auto-Discovery.
-    Fallbacks: Original -> Edited -> Derivative (Preview)
+    Fetches photos using Auto-Discovery (Mac Only).
+    Safe for Cloud: Returns empty list if not on Mac.
     """
+    
+    # --- 2. SAFETY CHECK ---
+    # If we are NOT on a Mac, or if the library isn't installed, stop immediately.
+    if sys.platform != "darwin" or osxphotos is None:
+        return []
+
+    # --- 3. YOUR ORIGINAL LOGIC (Restored) ---
     print(f"🔍 Searching for photos on: {target_date}...")
     
     try:
@@ -23,21 +40,18 @@ def get_photos_from_mac_library(target_date):
                 found_date_match = True
                 valid_path = None
                 
-                # --- STRATEGY 1: The Original (Best Quality) ---
+                # STRATEGY 1: The Original (Best Quality)
                 if p.path and os.path.exists(p.path):
                     valid_path = p.path
                 
-                # --- STRATEGY 2: The Edited Version ---
+                # STRATEGY 2: The Edited Version
                 elif p.path_edited and os.path.exists(p.path_edited):
                     valid_path = p.path_edited
                 
-                # --- STRATEGY 3: The Preview/Thumbnail (The Fix!) ---
-                # If the original is missing (Path=None), grab the largest preview available
+                # STRATEGY 3: The Preview/Thumbnail
                 else:
-                    # 'path_derivatives' returns a list of preview paths. We take the last one (usually largest).
                     derivatives = p.path_derivatives
                     if derivatives:
-                        # Find the first one that actually exists on disk
                         for derivative_path in reversed(derivatives):
                             if os.path.exists(derivative_path):
                                 valid_path = derivative_path
