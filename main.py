@@ -112,7 +112,6 @@ if date_str in db:
         img_data = image_loader.load_image_for_streamlit(local_path)
         if img_data: st.image(img_data)
     elif cloud_url:
-        st.info("☁️ Loading image from Cloud...")
         st.image(cloud_url)
     elif local_path:
         st.warning("⚠️ Photo missing from disk.")
