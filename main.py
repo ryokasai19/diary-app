@@ -1,35 +1,57 @@
 import streamlit as st
 import datetime
 import os
-# Import your custom modules
 from modules import database, ai, mac_photos, image_loader, cloud_db
 
-st.title("Chit Chat! 😋")
+# ==========================================
+# 1. INITIALIZATION (Crash Prevention)
+# ==========================================
+# We auto-assign the user to 'ryo' so no login is needed
+if "logged_in_user" not in st.session_state:
+    st.session_state.logged_in_user = "ryo"
 
-# Load Data
-db = database.load_db()
+if "step" not in st.session_state:
+    st.session_state.step = 1
+
+if "selected_photo" not in st.session_state:
+    st.session_state.selected_photo = None
+
+# ==========================================
+# 2. MAIN APP SETUP
+# ==========================================
+current_user = st.session_state.logged_in_user
+
+st.title("Chit Chat! 😋")
 
 # --- SIDEBAR: SEARCH ---
 st.sidebar.header("🔍 Search Memories")
 search_term = st.sidebar.text_input("Find keyword")
 
-# --- SIDEBAR: USER SELECTOR ---
-st.sidebar.header("👤 User Profile")
-current_user = st.sidebar.selectbox("View Diary Of:", ["ryo", "syd"])
+# --- SIDEBAR: FRIEND VIEW ---
+# Toggle between "My Diary" (Ryo) and "Friend's Diary"
+view_mode = st.sidebar.radio("Mode", ["My Diary", "Friend's Diary"])
 
-# --- LOAD DATA BASED ON SELECTION ---
-if current_user == "ryo":
-    # Load Local Data (Writable)
+if view_mode == "Friend's Diary":
+    friend_name = st.sidebar.text_input("Enter Friend's Username:")
+    if friend_name:
+        st.info(f"Viewing {friend_name}'s Diary")
+        # Load Friend's Data from Cloud (Read-Only)
+        db = cloud_db.fetch_entries_by_user(friend_name, viewer_is_owner=False)
+        is_read_only = True
+        active_user_view = friend_name
+    else:
+        st.warning("Enter a name above.")
+        # If no name, load empty dict to prevent crash
+        db = {}
+        is_read_only = True
+        active_user_view = "Unknown"
+else:
+    # Load My Data from Local Disk (Writable)
     db = database.load_db()
     is_read_only = False
-    st.sidebar.success("✏️ Editing Mode")
-else:
-    # Load Cloud Data (Read-Only)
-    st.spinner(f"Downloading {current_user}'s diary...")
-    db = cloud_db.fetch_entries_by_user(current_user)
-    is_read_only = True
-    st.sidebar.info("👀 View-Only Mode")
+    active_user_view = current_user
 
+# --- CALENDAR SETUP ---
 def go_to_date(new_date):
     st.session_state.date_picker = new_date
 
@@ -38,17 +60,8 @@ if search_term:
     st.sidebar.markdown(f"**Found {len(results)} entries:**")
     for date_result in results:
         y, m, d = map(int, date_result.split("-"))
-        st.sidebar.button(
-            f"📅 {date_result}", 
-            key=f"btn_search_{date_result}",
-            on_click=go_to_date,
-            args=(datetime.date(y, m, d),)
-        )
-    if not results:
-        st.sidebar.caption("No matches found.")
-    st.sidebar.markdown("---")
+        st.sidebar.button(f"📅 {date_result}", key=f"btn_{date_result}", on_click=go_to_date, args=(datetime.date(y, m, d),))
 
-# --- CALENDAR SETUP ---
 if "date_picker" not in st.session_state:
     st.session_state.date_picker = datetime.date.today()
 
@@ -61,47 +74,82 @@ if "last_date" not in st.session_state or st.session_state.last_date != date_str
     st.session_state.step = 1
     st.session_state.selected_photo = None
 
-# ==========================
-#       VIEW MODE
-# ==========================
+# ==========================================
+# 3. VIEW MODE
+# ==========================================
 if date_str in db:
     entry = db[date_str]
     
-    # 1. DISPLAY PHOTO (Priority: Local -> Cloud)
+    # 1. PHOTO
     local_path = entry.get("image_path")
     cloud_url = entry.get("image_url")
     
     st.caption(f"📅 Memory from {date_str}")
 
-    # OPTION A: Try Local File First
     if local_path and os.path.exists(local_path):
         img_data = image_loader.load_image_for_streamlit(local_path)
-        if img_data:
-            st.image(img_data)
-        else:
-            st.error("⚠️ Local image file is corrupt.")
-            
-    # OPTION B: Fallback to Cloud URL
+        if img_data: st.image(img_data)
     elif cloud_url:
         st.info("☁️ Loading image from Cloud...")
         st.image(cloud_url)
-        
-    else:
-        if local_path: 
-            st.warning(f"⚠️ Photo missing from disk: {local_path}")
+    elif local_path:
+        st.warning("⚠️ Photo missing from disk.")
 
-    # 2. Summary
+    # 2. SUMMARY (View & Finalize Logic)
     st.subheader("📝 Summary")
-    st.markdown(entry["summary"])
     
-    # 3. Audio
+    is_edited = entry.get("is_edited", False)
+    edit_mode_key = f"edit_mode_{date_str}"
+    
+    if edit_mode_key not in st.session_state:
+        st.session_state[edit_mode_key] = False
+
+    # --- LOGIC START ---
+
+    if is_read_only:
+        # Friend View
+        st.markdown(entry["summary"])
+        if is_edited:
+            st.caption("*(This entry has been edited)*")
+
+    elif is_edited:
+        # CASE 1: ALREADY FINALIZED (The Lock 🔒)
+        st.markdown(entry["summary"])
+        st.caption("🔒 *Edited & Finalized*")
+        # Note: We deliberately do NOT show the "Edit" button here.
+
+    elif st.session_state[edit_mode_key]:
+        # CASE 2: CURRENTLY EDITING
+        new_summary = st.text_area("Update summary:", value=entry["summary"], height=150)
+        col1, col2 = st.columns([1, 5])
+        
+        if col1.button("💾 Finalize"):
+            # Update Cloud
+            cloud_db.update_summary(date_str, current_user, new_summary)
+            # Update Local
+            if current_user == "ryo": 
+                database.update_local_text(date_str, new_summary)
+            
+            st.session_state[edit_mode_key] = False
+            st.success("Finalized!")
+            st.rerun()
+            
+        if col2.button("Cancel"):
+            st.session_state[edit_mode_key] = False
+            st.rerun()
+
+    else:
+        # CASE 3: CLEAN SLATE (Can still be edited once)
+        st.markdown(entry["summary"])
+        if st.button("✏️ Edit Text"):
+            st.session_state[edit_mode_key] = True
+            st.rerun()
+    
+    # 3. AUDIO
     st.subheader("🎧 Recording")
-    
-    # Get paths safely
     audio_path = entry.get("audio_path")
     audio_url = entry.get("audio_url")
-
-    # Priority: Local File -> Cloud URL -> Error
+    
     if audio_path and os.path.exists(audio_path):
         st.audio(audio_path)
     elif audio_url:
@@ -109,26 +157,23 @@ if date_str in db:
     else:
         st.info("No audio available.")
 
-# ==========================
-#      RECORD MODE
-# ==========================
+# ==========================================
+# 4. RECORD MODE (The Linear 4-Step Flow)
+# ==========================================
 else:
-    
     if is_read_only:
-        st.info(f"🚫 {current_user} hasn't posted on this day.")
+        st.info(f"🚫 {active_user_view} hasn't posted on this day.")
         st.stop()
-    # --- STEP 1: PHOTO SELECTION ---
+
+    # --- STEP 1: PHOTO ---
     if st.session_state.step == 1:
         st.info("Step 1: Choose a photo")
-        
-        # This will now use your robust 'mac_photos' module
         suggested_photos = mac_photos.get_photos_from_mac_library(selected_date)
-
+        
         if suggested_photos:
             cols = st.columns(3)
             for idx, photo_path in enumerate(suggested_photos):
                 img_data = image_loader.load_image_for_streamlit(photo_path)
-                
                 if img_data:
                     with cols[idx % 3]:
                         st.image(img_data)
@@ -137,7 +182,7 @@ else:
                             st.session_state.step = 2 
                             st.rerun()
         else:
-            st.warning("No downloaded photos found for this date. (Check Photos app to ensure they are downloaded from iCloud)")
+            st.warning("No photos found.")
         
         st.markdown("---")
         if st.button("Skip / No Photo"):
@@ -145,50 +190,84 @@ else:
             st.session_state.step = 2
             st.rerun()
 
-    # --- STEP 2: RECORDING ---
+    # --- STEP 2: RECORD ---
     elif st.session_state.step == 2:
         st.info("Step 2: Record your thoughts")
-        
         if st.session_state.selected_photo:
-            st.caption("Selected Photo:")
             preview = image_loader.load_image_for_streamlit(st.session_state.selected_photo)
-            if preview:
-                st.image(preview, width=150)
+            if preview: st.image(preview, width=150)
 
         audio_value = st.audio_input(f"Record for {date_str}")
-
         if audio_value:
-            st.warning("Processing...")
-            audio_bytes = audio_value.read()
+            st.spinner("Generating AI Summary...")
+            st.session_state.temp_audio = audio_value.read()
+            st.session_state.temp_summary = ai.summarize_audio(st.session_state.temp_audio)
+            
+            # Reset flags for next step
+            st.session_state.is_edited_flag = False 
+            st.session_state.is_editing_mode = False
+            st.session_state.step = 3
+            st.rerun()
 
-            try:
-                # 1. AI Summary
-                summary = ai.summarize_audio(audio_bytes)
-                
-                # 2. Save Locally
-                database.save_entry(
-                    date_str, 
-                    summary, 
-                    audio_bytes, 
-                    st.session_state.selected_photo
-                )
-
-                # 3. Save to Cloud (Supabase)
-                # Reconstruct path logic
-                saved_audio_path = f"recordings/{date_str}.wav"
-                
-                try:
-                    cloud_db.save_to_cloud(date_str, summary, saved_audio_path, st.session_state.selected_photo, user_id="ryo")
-                    st.toast("✅ Synced to Cloud!")
-                except Exception as e:
-                    st.warning(f"Saved locally, but Cloud Sync failed: {e}")
-                
-                st.success("Entry Saved!")
+    # --- STEP 3: REVIEW & EDIT ---
+    elif st.session_state.step == 3:
+        st.info("Step 3: Review Draft")
+        
+        if st.session_state.is_editing_mode:
+            st.subheader("✏️ Editing Draft")
+            new_text = st.text_area("Make your changes:", value=st.session_state.temp_summary, height=200)
+            if st.button("💾 Finalize Changes"):
+                st.session_state.temp_summary = new_text
+                st.session_state.is_edited_flag = True
+                st.session_state.step = 4
+                st.rerun()
+        else:
+            st.subheader("📝 AI Summary")
+            st.markdown(st.session_state.temp_summary)
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            if col1.button("✏️ Edit Text"):
+                st.session_state.is_editing_mode = True
+                st.rerun()
+            if col2.button("✅ Looks Good (Next)"):
+                st.session_state.step = 4
                 st.rerun()
 
-            except Exception as e:
-                st.error(f"Error: {e}")
+    # --- STEP 4: PRIVACY & SAVE ---
+    elif st.session_state.step == 4:
+        st.info("Step 4: Finalize & Upload")
+        st.subheader("🔒 Privacy Settings")
         
-        #if st.button("⬅️ Change Photo"):
-        #    st.session_state.step = 1
-        #    st.rerun()
+        is_public = st.toggle("🌍 Make Public (Friends can see)", value=False)
+        st.markdown("---")
+        
+        if st.button("🚀 Upload & Save"):
+            try:
+                # Local Save
+                database.save_entry(
+                    date_str, 
+                    st.session_state.temp_summary, 
+                    st.session_state.temp_audio, 
+                    st.session_state.selected_photo, 
+                    is_edited=st.session_state.is_edited_flag
+                )
+
+                # Cloud Save
+                cloud_db.save_to_cloud(
+                    date_str, 
+                    st.session_state.temp_summary, 
+                    f"recordings/{date_str}.wav", 
+                    st.session_state.selected_photo,
+                    user_id="ryo",
+                    is_public=is_public,
+                    is_edited=st.session_state.is_edited_flag
+                )
+                
+                st.toast("✅ Saved Successfully!")
+                # Cleanup
+                del st.session_state.temp_summary
+                del st.session_state.temp_audio
+                st.session_state.step = 1
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error saving: {e}")

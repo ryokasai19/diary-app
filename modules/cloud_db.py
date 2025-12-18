@@ -5,6 +5,7 @@ from supabase import create_client, Client
 SUPABASE_URL = "https://lryuqzddbhxbsdyzyxjb.supabase.co"
 SUPABASE_KEY = "sb_publishable_6U4tpUtaF4Nn7_mGfKP9ig_WAk_av4Q"
 
+
 # Initialize
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -32,36 +33,38 @@ def upload_file(local_path, destination_path):
         print(f"⚠️ Cloud Upload Error: {e}")
         return None
 
-def save_to_cloud(date_str, summary, local_audio_path, local_image_path, user_id="ryo"):
-    """Saves text to DB and media to Storage."""
-    print(f"☁️ Syncing {date_str} for user '{user_id}'...")
 
-    # 1. Upload Audio
-    audio_cloud_path = f"audio/{date_str}.wav"
-    audio_url = upload_file(local_audio_path, audio_cloud_path)
+def save_to_cloud(date_str, summary, local_audio_path, local_image_path, user_id="ryo", is_public=False, is_edited=False):
+    """Saves entry with privacy AND edit status."""
+    print(f"☁️ Syncing {date_str} (Public: {is_public}, Edited: {is_edited})...")
+
+    # 1. Upload Audio (Pass BOTH the file path AND the cloud destination)
+    audio_url = upload_file(local_audio_path, f"audio/{user_id}/{date_str}.wav")
     
-    # 2. Upload Image (if exists)
+    # 2. Upload Image
     image_url = None
     if local_image_path:
-        ext = os.path.splitext(local_image_path)[1] # get .jpg or .heic
-        image_cloud_path = f"images/{date_str}{ext}"
-        image_url = upload_file(local_image_path, image_cloud_path)
+        # Get extension (like .jpg) safely
+        ext = os.path.splitext(local_image_path)[1]
+        # Pass BOTH the file path AND the cloud destination
+        image_url = upload_file(local_image_path, f"images/{user_id}/{date_str}{ext}")
 
-    # 3. Save Data (Upsert)
     data = {
         "user_id": user_id,
         "date": date_str,
         "summary": summary,
         "audio_url": audio_url,
-        "image_url": image_url
+        "image_url": image_url,
+        "is_public": is_public,
+        "is_edited": is_edited  # <--- NEW FIELD
     }
     
     try:
-        # .upsert() updates the row if 'date' exists, or inserts if new
         supabase.table("entries").upsert(data).execute()
-        print("✅ Cloud Save Complete!")
+        return True
     except Exception as e:
         print(f"❌ Database Error: {e}")
+        return False
 
 # --- NEW FUNCTION: Fetch Friend's Data ---
 def fetch_entries_by_user(target_user_id):
@@ -79,6 +82,52 @@ def fetch_entries_by_user(target_user_id):
                 "audio_url": row["audio_url"], # But we have the URL!
                 "image_path": None,
                 "image_url": row["image_url"]
+            }
+        return cloud_data
+        
+    except Exception as e:
+        print(f"❌ Fetch Error: {e}")
+        return {}
+
+
+def update_summary(date_str, user_id, new_summary):
+    """Updates only the text summary of an entry."""
+    try:
+        supabase.table("entries").update({
+            "summary": new_summary,
+            "is_edited": True
+        }).eq("user_id", user_id).eq("date", date_str).execute()
+        return True
+    except Exception as e:
+        print(f"❌ Update Error: {e}")
+        return False
+
+def fetch_entries_by_user(target_user_id, viewer_is_owner=False):
+    """
+    Downloads entries. 
+    If viewer_is_owner is False, ONLY fetches public entries.
+    """
+    try:
+        query = supabase.table("entries").select("*").eq("user_id", target_user_id)
+        
+        # KEY LOGIC: If I'm not the owner, force the 'is_public' filter
+        if not viewer_is_owner:
+            query = query.eq("is_public", True)
+            
+        response = query.execute()
+        
+        # Convert to dictionary format
+        cloud_data = {}
+        for row in response.data:
+            date_key = row["date"]
+            cloud_data[date_key] = {
+                "summary": row["summary"],
+                "audio_path": None,
+                "audio_url": row["audio_url"],
+                "image_path": None, # Cloud entries don't have local paths
+                "image_url": row["image_url"],
+                "is_public": row.get("is_public", False),
+                "is_edited": row.get("is_edited", False)
             }
         return cloud_data
         

@@ -19,7 +19,7 @@ def load_db():
     with open(DB_FILE, "r") as f:
         return json.load(f)
 
-def save_entry(date_str, summary_text, audio_bytes, image_source_path=None):
+def save_entry(date_str, summary_text, audio_bytes, image_source_path=None, is_edited = False):
     """Saves a new entry to the JSON HashMap and the Audio file."""
     # 1. Save Audio
     filename = f"{AUDIO_DIR}/{date_str}.wav"
@@ -43,9 +43,23 @@ def save_entry(date_str, summary_text, audio_bytes, image_source_path=None):
     db[date_str] = {
         "summary": summary_text,
         "audio_path": filename,
-        "image_path": saved_image_path
+        "image_path": saved_image_path,
+        "is_edited": is_edited
     }
     
     # 4. Save JSON
     with open(DB_FILE, "w") as f:
         json.dump(db, f, indent=4)
+
+def update_local_text(date_str, new_text):
+    """Updates the text summary in the local JSON file."""
+    db = load_db() # Load current data
+    
+    if date_str in db:
+        # Update the specific fields
+        db[date_str]["summary"] = new_text
+        db[date_str]["is_edited"] = True
+        
+        # Save back to disk (using the same logic as save_entry)
+        with open(DB_FILE, "w") as f:
+            json.dump(db, f, indent=4)
