@@ -18,23 +18,50 @@ if "selected_photo" not in st.session_state:
     st.session_state.selected_photo = None
 
 # ==========================================
-# 2. LOGIN GATE
+# 2. LOGIN GATE (ROBUST VERSION)
 # ==========================================
 if not st.session_state.logged_in_user:
     st.title("🔒 Diary Login")
     
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        username_input = st.text_input("Username").lower()
-        password_input = st.text_input("Password", type="password")
+    # Create Tabs for cleaner UI
+    tab1, tab2 = st.tabs(["Log In", "Sign Up"])
     
-    if st.button("Log In"):
-        if cloud_db.check_login(username_input, password_input):
-            st.session_state.logged_in_user = username_input
-            st.success("Login Successful!")
-            st.rerun()
-        else:
-            st.error("Incorrect username or password.")
+    # --- LOGIN TAB ---
+    with tab1:
+        st.subheader("Welcome Back")
+        l_email = st.text_input("Email", key="l_email")
+        l_pass = st.text_input("Password", type="password", key="l_pass")
+        
+        if st.button("Log In"):
+            with st.spinner("Checking credentials..."):
+                username = cloud_db.login(l_email, l_pass)
+                if username:
+                    st.session_state.logged_in_user = username
+                    st.success(f"Welcome back, {username}!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid email or password.")
+
+    # --- SIGN UP TAB ---
+    with tab2:
+        st.subheader("Create Account")
+        s_email = st.text_input("Email", key="s_email")
+        s_user = st.text_input("Pick a Username (e.g. ryo)", key="s_user")
+        s_pass = st.text_input("Password (has to be longer than 5 chars)", type="password", key="s_pass")
+        
+        if st.button("Create Account"):
+            if s_user and s_email and s_pass:
+                with st.spinner("Creating secure account..."):
+                    # Check if username is already taken (Optional but good)
+                    # For now, we just try to create the user
+                    res = cloud_db.sign_up(s_email, s_pass, s_user)
+                    if res:
+                        st.success("✅ Account created! Go to the 'Log In' tab.")
+                    else:
+                        st.error("Error: Email might be taken or password is too weak.")
+            else:
+                st.warning("Please fill in all fields.")
+    
     st.stop()
 
 # ==========================================

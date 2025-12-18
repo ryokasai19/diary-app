@@ -23,6 +23,7 @@ def summarize_audio(audio_bytes):
             """
             Summarize this audio into a concise bulleted list (max 5 points).
             Style: Telegraphic, first-person diary format.
+            Just output the bullet points, nothing like 'Okay, here is the summary in telegraphic, first-person diary format:' needed.
             - Focus on: Who, What, Where, How.
             - Grammar: Use sentence fragments. Omit "they/he/she". Use "I" if needed.
             - Example: "Met Nicholas. He is moving to Seattle" -> "Nicholas moving to Seattle."

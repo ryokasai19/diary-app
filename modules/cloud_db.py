@@ -179,3 +179,41 @@ def check_login(username, password):
     except Exception as e:
         print(f"Login Check Error: {e}")
         return False
+
+# ... inside modules/cloud_db.py ...
+
+def sign_up(email, password, username):
+    """
+    Creates a new secure user in Supabase.
+    Saves the 'username' (e.g., 'ryo') in the metadata so we can find their diary.
+    """
+    try:
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {
+                "data": {
+                    "username": username.lower() # Save "ryo" here
+                }
+            }
+        })
+        return response
+    except Exception as e:
+        return None
+
+def login(email, password):
+    """
+    Logs in using Supabase Auth.
+    Returns the 'username' (e.g., 'ryo') if successful.
+    """
+    try:
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+        # Extract the username we saved during sign up
+        user_meta = response.user.user_metadata
+        return user_meta.get("username")
+    except Exception as e:
+        print(f"Login Error: {e}")
+        return None
